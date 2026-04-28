@@ -986,10 +986,13 @@ export default function App() {
   const [sessao, setSessao] = useState(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authSenha, setAuthSenha] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacaoSenha, setConfirmacaoSenha] = useState("");
   const [syncStatus, setSyncStatus] = useState("Modo local ativo.");
   const [sincronizandoNuvem, setSincronizandoNuvem] = useState(false);
   const [nuvemPronta, setNuvemPronta] = useState(false);
   const [ultimaSyncEm, setUltimaSyncEm] = useState("");
+  const [modoRecuperacaoSenha, setModoRecuperacaoSenha] = useState(false);
 
   const dataHoje = hoje();
   const tema = prefs.altoContraste ? TEMA_ALTO_CONTRASTE : TEMA_PADRAO;
@@ -1169,6 +1172,14 @@ export default function App() {
       const session = data.session ?? null;
       setSessao(session);
 
+      if (window.location.hash.includes("type=recovery")) {
+        setModoRecuperacaoSenha(true);
+        setAba(2);
+        setSyncStatus("Link de recuperacao detectado. Defina sua nova senha.");
+        setNuvemPronta(true);
+        return;
+      }
+
       if (session?.user?.id) {
         setSyncStatus("Conta conectada. Carregando nuvem...");
         void carregarEstadoDaNuvem(session.user.id);
@@ -1185,14 +1196,24 @@ export default function App() {
 
       setSessao(session ?? null);
 
+      if (event === "PASSWORD_RECOVERY") {
+        setModoRecuperacaoSenha(true);
+        setAba(2);
+        setNuvemPronta(true);
+        setSyncStatus("Link de recuperacao validado. Escolha sua nova senha.");
+        return;
+      }
+
       if (event === "SIGNED_OUT") {
         setNuvemPronta(false);
         setUltimaSyncEm("");
+        setModoRecuperacaoSenha(false);
         setSyncStatus("Sessao encerrada. Modo local ativo.");
         return;
       }
 
       if (session?.user?.id) {
+        setModoRecuperacaoSenha(false);
         setSyncStatus("Conta conectada. Carregando nuvem...");
         setTimeout(() => {
           if (ativo) void carregarEstadoDaNuvem(session.user.id);
@@ -1482,6 +1503,71 @@ export default function App() {
     } catch (error) {
       console.error("Falha ao entrar no Supabase", error);
       setMensagem(error.message || "Nao foi possivel entrar na conta.");
+    } finally {
+      setSincronizandoNuvem(false);
+    }
+  }
+
+  async function enviarRecuperacaoSenha() {
+    if (!supabaseConfigurado || !supabase) {
+      setMensagem("Supabase ainda nao configurado neste ambiente.");
+      return;
+    }
+    if (!authEmail.trim()) {
+      setMensagem("Informe o email para recuperar a senha.");
+      return;
+    }
+
+    setSincronizandoNuvem(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
+        redirectTo: `${window.location.origin}/`,
+      });
+
+      if (error) throw error;
+
+      setMensagem("Email de recuperacao enviado. Abra o link mais recente da sua caixa de entrada.");
+      setSyncStatus("Email de recuperacao enviado.");
+    } catch (error) {
+      console.error("Falha ao enviar email de recuperacao", error);
+      setMensagem(error.message || "Nao foi possivel enviar o email de recuperacao.");
+    } finally {
+      setSincronizandoNuvem(false);
+    }
+  }
+
+  async function redefinirSenha() {
+    if (!supabaseConfigurado || !supabase) {
+      setMensagem("Supabase ainda nao configurado neste ambiente.");
+      return;
+    }
+    if (!novaSenha || !confirmacaoSenha) {
+      setMensagem("Preencha a nova senha e a confirmacao.");
+      return;
+    }
+    if (novaSenha !== confirmacaoSenha) {
+      setMensagem("A confirmacao da senha nao confere.");
+      return;
+    }
+    if (novaSenha.length < 6) {
+      setMensagem("Use pelo menos 6 caracteres na nova senha.");
+      return;
+    }
+
+    setSincronizandoNuvem(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: novaSenha });
+      if (error) throw error;
+
+      setNovaSenha("");
+      setConfirmacaoSenha("");
+      setModoRecuperacaoSenha(false);
+      setMensagem("Senha atualizada com sucesso. Agora voce pode entrar normalmente.");
+      setSyncStatus("Senha redefinida com sucesso.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch (error) {
+      console.error("Falha ao redefinir senha", error);
+      setMensagem(error.message || "Nao foi possivel redefinir a senha.");
     } finally {
       setSincronizandoNuvem(false);
     }
@@ -2474,6 +2560,52 @@ export default function App() {
                   Supabase nao configurado neste ambiente. Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` no
                   `.env.local` ou nas variaveis do Netlify para ativar a sincronizacao.
                 </div>
+              ) : modoRecuperacaoSenha ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                  <div style={{ gridColumn: "1 / -1", fontSize: 13, color: tema.textoSuave }}>
+                    O link de recuperacao foi reconhecido. Defina abaixo a nova senha da sua conta.
+                  </div>
+                  <label style={{ fontSize: 12 }}>
+                    Nova senha
+                    <input
+                      type="password"
+                      value={novaSenha}
+                      onChange={(e) => setNovaSenha(e.target.value)}
+                      placeholder="Nova senha"
+                      style={{ width: "100%", marginTop: 2 }}
+                    />
+                  </label>
+                  <label style={{ fontSize: 12 }}>
+                    Confirmar nova senha
+                    <input
+                      type="password"
+                      value={confirmacaoSenha}
+                      onChange={(e) => setConfirmacaoSenha(e.target.value)}
+                      placeholder="Repita a nova senha"
+                      style={{ width: "100%", marginTop: 2 }}
+                    />
+                  </label>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <button
+                      onClick={redefinirSenha}
+                      disabled={sincronizandoNuvem}
+                      style={{
+                        border: "1px solid #BBF7D0",
+                        background: "#F0FDF4",
+                        color: "#166534",
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                        cursor: sincronizandoNuvem ? "wait" : "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Salvar nova senha
+                    </button>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
+                    Status: {sincronizandoNuvem ? "Processando..." : syncStatus}
+                  </div>
+                </div>
               ) : !sessao ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
                   <label style={{ fontSize: 12 }}>
@@ -2526,6 +2658,21 @@ export default function App() {
                       }}
                     >
                       Entrar
+                    </button>
+                    <button
+                      onClick={enviarRecuperacaoSenha}
+                      disabled={sincronizandoNuvem}
+                      style={{
+                        border: "1px solid #E2E8F0",
+                        background: "#F8FAFC",
+                        color: tema.texto,
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                        cursor: sincronizandoNuvem ? "wait" : "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Esqueci minha senha
                     </button>
                   </div>
                   <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
