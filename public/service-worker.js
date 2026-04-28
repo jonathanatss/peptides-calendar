@@ -1,5 +1,15 @@
-﻿const CACHE_NAME = "peptide-calendar-v2";
-const ASSETS = ["/", "/service-worker.js"];
+const CACHE_NAME = "peptide-calendar-v3";
+const ASSETS = [
+  "/",
+  "/manifest.webmanifest",
+  "/service-worker.js",
+  "/icons/apple-touch-icon.png",
+  "/icons/favicon-32.png",
+  "/icons/favicon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

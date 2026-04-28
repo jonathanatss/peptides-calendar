@@ -983,6 +983,11 @@ export default function App() {
   const [mensagem, setMensagem] = useState("");
   const [editandoProtocolo, setEditandoProtocolo] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [instalacaoInfo, setInstalacaoInfo] = useState({
+    ios: false,
+    safari: false,
+    standalone: false,
+  });
   const [sessao, setSessao] = useState(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authSenha, setAuthSenha] = useState("");
@@ -1001,6 +1006,7 @@ export default function App() {
   const tema = prefs.altoContraste ? TEMA_ALTO_CONTRASTE : TEMA_PADRAO;
   const supabaseConfigurado = useMemo(() => isSupabaseConfigurado(), []);
   const supabase = useMemo(() => getSupabaseClient(), [supabaseConfigurado]);
+  const precisaInstalacaoManualIOS = instalacaoInfo.ios && !instalacaoInfo.standalone;
 
   const carregarEstadoDaNuvem = useCallback(
     async (userId) => {
@@ -1271,6 +1277,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const ua = window.navigator.userAgent || "";
+    const plataforma = window.navigator.platform || "";
+    const ios =
+      /iPad|iPhone|iPod/.test(ua) ||
+      (plataforma === "MacIntel" && typeof window.navigator.maxTouchPoints === "number" && window.navigator.maxTouchPoints > 1);
+    const safari = ios && /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA/i.test(ua);
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+
+    setInstalacaoInfo({ ios, safari, standalone });
+  }, []);
+
+  useEffect(() => {
     if (!prefs.lembretesAtivos) return;
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
@@ -1438,6 +1457,15 @@ export default function App() {
     }
     await installPromptEvent.prompt();
     setInstallPromptEvent(null);
+  }
+
+  async function copiarLinkDoApp() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setMensagem("Link do app copiado. Abra no Safari do iPhone para adicionar o icone.");
+    } catch (_) {
+      setMensagem("Nao foi possivel copiar o link automaticamente neste navegador.");
+    }
   }
 
   async function cadastrarContaNuvem() {
@@ -2266,6 +2294,22 @@ export default function App() {
                 Instalar app
               </button>
             )}
+            {!installPromptEvent && precisaInstalacaoManualIOS && (
+              <button
+                onClick={() => setAba(3)}
+                style={{
+                  border: "1px solid #BFDBFE",
+                  background: "#EFF6FF",
+                  color: "#1D4ED8",
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Instalar no iPhone
+              </button>
+            )}
           </div>
         </div>
 
@@ -3048,6 +3092,122 @@ export default function App() {
                   </div>
                 )}
               </div>
+            </div>
+
+            <div
+              style={{
+                background: tema.superficie,
+                border: `1px solid ${tema.borda}`,
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Instalacao do app</div>
+              <div style={{ fontSize: 13, color: tema.textoSuave, marginBottom: 12 }}>
+                Use esta opcao para abrir o calendario como app, com icone proprio na tela inicial.
+              </div>
+
+              {instalacaoInfo.standalone ? (
+                <div
+                  style={{
+                    background: "#F0FDF4",
+                    border: "1px solid #BBF7D0",
+                    borderRadius: 12,
+                    padding: 12,
+                    color: "#166534",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Este dispositivo ja esta usando o Peptides Calendar em modo app.
+                </div>
+              ) : precisaInstalacaoManualIOS ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div
+                    style={{
+                      background: "#FFF7ED",
+                      border: "1px solid #FED7AA",
+                      borderRadius: 12,
+                      padding: 12,
+                      fontSize: 13,
+                      color: "#9A3412",
+                    }}
+                  >
+                    No iPhone, a instalacao acontece pelo Safari usando "Adicionar a Tela de Inicio".
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                    <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
+                      <div style={{ fontSize: 11, color: tema.textoSuave, marginBottom: 4 }}>Passo 1</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>Abra este site no Safari</div>
+                      <div style={{ fontSize: 12, color: tema.textoSuave, marginTop: 4 }}>
+                        Se estiver em outro navegador, copie o link e abra no Safari.
+                      </div>
+                    </div>
+                    <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
+                      <div style={{ fontSize: 11, color: tema.textoSuave, marginBottom: 4 }}>Passo 2</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>Toque em Compartilhar</div>
+                      <div style={{ fontSize: 12, color: tema.textoSuave, marginTop: 4 }}>
+                        Use o icone quadrado com seta para cima na barra do Safari.
+                      </div>
+                    </div>
+                    <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
+                      <div style={{ fontSize: 11, color: tema.textoSuave, marginBottom: 4 }}>Passo 3</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>Adicionar a Tela de Inicio</div>
+                      <div style={{ fontSize: 12, color: tema.textoSuave, marginTop: 4 }}>
+                        Confirme o nome e salve para criar o icone do app.
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {!instalacaoInfo.safari && (
+                      <button
+                        onClick={copiarLinkDoApp}
+                        style={{
+                          border: "1px solid #BFDBFE",
+                          background: "#EFF6FF",
+                          color: "#1D4ED8",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Copiar link do app
+                      </button>
+                    )}
+                    <div style={{ fontSize: 12, color: tema.textoSuave, alignSelf: "center" }}>
+                      {instalacaoInfo.safari
+                        ? "Voce ja esta no navegador certo para adicionar o icone."
+                        : "Depois de copiar, cole o link no Safari do iPhone."}
+                    </div>
+                  </div>
+                </div>
+              ) : installPromptEvent ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button
+                    onClick={instalarApp}
+                    style={{
+                      border: "1px solid #BFDBFE",
+                      background: "#EFF6FF",
+                      color: "#1D4ED8",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Instalar app neste dispositivo
+                  </button>
+                  <div style={{ fontSize: 12, color: tema.textoSuave }}>
+                    Este navegador suporta instalacao direta do app.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: tema.textoSuave }}>
+                  Abra o app no Safari do iPhone para criar o icone na tela inicial, ou use um navegador com suporte a instalacao direta.
+                </div>
+              )}
             </div>
 
             <div
