@@ -1025,7 +1025,7 @@ export default function App() {
           );
         } else {
           setUltimaSyncEm("");
-          setSyncStatus("Conta conectada. Nenhum backup remoto encontrado ainda.");
+          setSyncStatus("Conta conectada. Nenhum backup remoto encontrado ainda. Clique em 'Sincronizar agora'.");
         }
 
         setNuvemPronta(true);
@@ -1051,7 +1051,7 @@ export default function App() {
       setSincronizandoNuvem(true);
       try {
         const agoraIso = new Date().toISOString();
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("calendar_state")
           .upsert(
             {
@@ -1060,15 +1060,12 @@ export default function App() {
               updated_at: agoraIso,
             },
             { onConflict: "user_id" }
-          )
-          .select("updated_at")
-          .single();
+          );
 
         if (error) throw error;
 
-        const atualizadoEm = data?.updated_at || agoraIso;
-        setUltimaSyncEm(atualizadoEm);
-        setSyncStatus(`Sincronizado em ${formatarDataHora(atualizadoEm)}.`);
+        setUltimaSyncEm(agoraIso);
+        setSyncStatus(`Sincronizado em ${formatarDataHora(agoraIso)}.`);
         return true;
       } catch (error) {
         console.error("Falha ao salvar estado na nuvem", error);
@@ -1596,7 +1593,10 @@ export default function App() {
     }
 
     const ok = await salvarEstadoNaNuvem();
-    if (ok) setMensagem("Dados sincronizados com a nuvem.");
+    if (!ok) return;
+
+    await carregarEstadoDaNuvem(sessao.user.id);
+    setMensagem("Dados sincronizados com a nuvem.");
   }
 
   async function baixarDaNuvemAgora() {
