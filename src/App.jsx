@@ -4,7 +4,7 @@ import { getSupabaseClient, isSupabaseConfigurado } from "./lib/supabase";
 
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const ABAS = ["Hoje", "Semana", "Guia", "Historico"];
+const ABAS = ["Hoje", "Semana", "Guia", "Conta e sincronizacao", "Backup e restauracao", "Historico"];
 const CHAVE_MARCADAS = "pc-doses-marcadas-v3";
 const CHAVE_PROTOCOLO = "pc-protocolo-v1";
 const CHAVE_PREFS = "pc-preferencias-v1";
@@ -1174,7 +1174,7 @@ export default function App() {
 
       if (window.location.hash.includes("type=recovery")) {
         setModoRecuperacaoSenha(true);
-        setAba(2);
+        setAba(3);
         setSyncStatus("Link de recuperacao detectado. Defina sua nova senha.");
         setNuvemPronta(true);
         return;
@@ -1198,7 +1198,7 @@ export default function App() {
 
       if (event === "PASSWORD_RECOVERY") {
         setModoRecuperacaoSenha(true);
-        setAba(2);
+        setAba(3);
         setNuvemPronta(true);
         setSyncStatus("Link de recuperacao validado. Escolha sua nova senha.");
         return;
@@ -2589,456 +2589,6 @@ export default function App() {
           <div>
             <div
               style={{
-                background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
-                border: `1px solid ${tema.borda}`,
-                borderRadius: 18,
-                padding: 16,
-                marginBottom: 16,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Conta, nuvem e backup</div>
-                  <div style={{ fontSize: 13, color: tema.textoSuave }}>
-                    Sincronize entre dispositivos e use backups para restaurar ou substituir o estado atual com
-                    seguranca.
-                  </div>
-                </div>
-                <div
-                  style={{
-                    borderRadius: 999,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: sessao ? "#F0FDF4" : "#FFFFFF",
-                    border: `1px solid ${sessao ? "#BBF7D0" : tema.borda}`,
-                    color: sessao ? "#166534" : tema.textoSuave,
-                  }}
-                >
-                  {sincronizandoNuvem ? "Sincronizando..." : sessao ? "Conta conectada" : "Modo local"}
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
-                <div
-                  style={{
-                    background: "#FFFFFF",
-                    border: `1px solid ${tema.borda}`,
-                    borderRadius: 14,
-                    padding: 14,
-                  }}
-                >
-                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Conta e sincronizacao</div>
-                  <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>
-                    O app sempre salva no navegador. Quando a conta esta ativa, ele tambem sincroniza com o Supabase.
-                  </div>
-
-                  {!supabaseConfigurado ? (
-                    <div
-                      style={{
-                        background: "#FFFBEB",
-                        border: "1px solid #FDE68A",
-                        borderRadius: 12,
-                        padding: 12,
-                        fontSize: 13,
-                        color: "#92400E",
-                      }}
-                    >
-                      Supabase nao configurado neste ambiente. Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
-                      no `.env.local` ou nas variaveis do Netlify para ativar a sincronizacao.
-                    </div>
-                  ) : modoRecuperacaoSenha ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                      <div style={{ gridColumn: "1 / -1", fontSize: 13, color: tema.textoSuave }}>
-                        O link de recuperacao foi reconhecido. Defina abaixo a nova senha da sua conta.
-                      </div>
-                      <label style={{ fontSize: 12 }}>
-                        Nova senha
-                        <input
-                          type="password"
-                          value={novaSenha}
-                          onChange={(e) => setNovaSenha(e.target.value)}
-                          placeholder="Nova senha"
-                          style={{ width: "100%", marginTop: 2 }}
-                        />
-                      </label>
-                      <label style={{ fontSize: 12 }}>
-                        Confirmar nova senha
-                        <input
-                          type="password"
-                          value={confirmacaoSenha}
-                          onChange={(e) => setConfirmacaoSenha(e.target.value)}
-                          placeholder="Repita a nova senha"
-                          style={{ width: "100%", marginTop: 2 }}
-                        />
-                      </label>
-                      <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        <button
-                          onClick={redefinirSenha}
-                          disabled={sincronizandoNuvem}
-                          style={{
-                            border: "1px solid #BBF7D0",
-                            background: "#F0FDF4",
-                            color: "#166534",
-                            borderRadius: 10,
-                            padding: "8px 12px",
-                            cursor: sincronizandoNuvem ? "wait" : "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Salvar nova senha
-                        </button>
-                      </div>
-                      <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
-                        Status: {sincronizandoNuvem ? "Processando..." : syncStatus}
-                      </div>
-                    </div>
-                  ) : !sessao ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                      <label style={{ fontSize: 12 }}>
-                        Email
-                        <input
-                          type="email"
-                          value={authEmail}
-                          onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder="voce@exemplo.com"
-                          style={{ width: "100%", marginTop: 2 }}
-                        />
-                      </label>
-                      <label style={{ fontSize: 12 }}>
-                        Senha
-                        <input
-                          type="password"
-                          value={authSenha}
-                          onChange={(e) => setAuthSenha(e.target.value)}
-                          placeholder="Sua senha"
-                          style={{ width: "100%", marginTop: 2 }}
-                        />
-                      </label>
-                      <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        <button
-                          onClick={cadastrarContaNuvem}
-                          disabled={sincronizandoNuvem}
-                          style={{
-                            border: "1px solid #BFDBFE",
-                            background: "#EFF6FF",
-                            color: "#1D4ED8",
-                            borderRadius: 10,
-                            padding: "8px 12px",
-                            cursor: sincronizandoNuvem ? "wait" : "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Criar conta
-                        </button>
-                        <button
-                          onClick={entrarContaNuvem}
-                          disabled={sincronizandoNuvem}
-                          style={{
-                            border: `1px solid ${tema.borda}`,
-                            background: "#FFFFFF",
-                            color: tema.texto,
-                            borderRadius: 10,
-                            padding: "8px 12px",
-                            cursor: sincronizandoNuvem ? "wait" : "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Entrar
-                        </button>
-                        <button
-                          onClick={enviarRecuperacaoSenha}
-                          disabled={sincronizandoNuvem}
-                          style={{
-                            border: "1px solid #E2E8F0",
-                            background: "#F8FAFC",
-                            color: tema.texto,
-                            borderRadius: 10,
-                            padding: "8px 12px",
-                            cursor: sincronizandoNuvem ? "wait" : "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Esqueci minha senha
-                        </button>
-                      </div>
-                      <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
-                        Status: {sincronizandoNuvem ? "Processando..." : syncStatus}
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 12 }}>
-                        <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
-                          <div style={{ fontSize: 11, color: tema.textoSuave }}>Conta</div>
-                          <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, wordBreak: "break-word" }}>{sessao.user.email}</div>
-                        </div>
-                        <div style={{ background: "#F0FDF4", borderRadius: 12, padding: 12 }}>
-                          <div style={{ fontSize: 11, color: "#166534" }}>Status</div>
-                          <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: "#166534" }}>
-                            {sincronizandoNuvem ? "Sincronizando..." : "Sincronizado"}
-                          </div>
-                        </div>
-                        <div style={{ background: "#EFF6FF", borderRadius: 12, padding: 12 }}>
-                          <div style={{ fontSize: 11, color: "#1D4ED8" }}>Ultima sync</div>
-                          <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: "#1D4ED8" }}>
-                            {ultimaSyncEm ? formatarDataHora(ultimaSyncEm) : "Pendente"}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>{syncStatus}</div>
-
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        <button
-                          onClick={sincronizarAgora}
-                          disabled={sincronizandoNuvem}
-                          style={{
-                            border: "1px solid #BBF7D0",
-                            background: "#F0FDF4",
-                            color: "#166534",
-                            borderRadius: 10,
-                            padding: "8px 12px",
-                            cursor: sincronizandoNuvem ? "wait" : "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Sincronizar agora
-                        </button>
-                        <button
-                          onClick={baixarDaNuvemAgora}
-                          disabled={sincronizandoNuvem}
-                          style={{
-                            border: "1px solid #BFDBFE",
-                            background: "#EFF6FF",
-                            color: "#1D4ED8",
-                            borderRadius: 10,
-                            padding: "8px 12px",
-                            cursor: sincronizandoNuvem ? "wait" : "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Recarregar da nuvem
-                        </button>
-                        <button
-                          onClick={sairContaNuvem}
-                          disabled={sincronizandoNuvem}
-                          style={{
-                            border: "1px solid #FECACA",
-                            background: "#FEF2F2",
-                            color: "#B91C1C",
-                            borderRadius: 10,
-                            padding: "8px 12px",
-                            cursor: sincronizandoNuvem ? "wait" : "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Sair
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    background: "#FFFFFF",
-                    border: `1px solid ${tema.borda}`,
-                    borderRadius: 14,
-                    padding: 14,
-                  }}
-                >
-                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Backups e restauracao</div>
-                  <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>
-                    Importe um backup JSON antigo para substituir os dados atuais. Se a conta estiver conectada, o
-                    mesmo backup sobe para o Supabase logo em seguida.
-                  </div>
-
-                  <input
-                    ref={inputBackupRef}
-                    type="file"
-                    accept="application/json,.json"
-                    onChange={importarBackupJSON}
-                    style={{ display: "none" }}
-                  />
-
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 12 }}>
-                    <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
-                      <div style={{ fontSize: 11, color: tema.textoSuave }}>Ultimo backup lido</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, wordBreak: "break-word" }}>
-                        {nomeArquivoImportado || "Nenhum arquivo importado ainda"}
-                      </div>
-                    </div>
-                    <div style={{ background: "#FFF7ED", borderRadius: 12, padding: 12 }}>
-                      <div style={{ fontSize: 11, color: "#9A3412" }}>Destino</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, color: "#9A3412" }}>
-                        {sessao ? "Local + Supabase" : "Somente local"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    <button
-                      onClick={abrirSeletorBackup}
-                      disabled={importandoBackup || sincronizandoNuvem}
-                      style={{
-                        border: "1px solid #BFDBFE",
-                        background: "#EFF6FF",
-                        color: "#1D4ED8",
-                        borderRadius: 10,
-                        padding: "8px 12px",
-                        cursor: importandoBackup || sincronizandoNuvem ? "wait" : "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      {importandoBackup ? "Importando..." : "Importar backup JSON"}
-                    </button>
-                    <button
-                      onClick={exportarJSON}
-                      style={{
-                        border: `1px solid ${tema.borda}`,
-                        background: "#FFFFFF",
-                        color: tema.texto,
-                        borderRadius: 10,
-                        padding: "8px 12px",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      Exportar JSON
-                    </button>
-                    <button
-                      onClick={exportarCSV}
-                      style={{
-                        border: `1px solid ${tema.borda}`,
-                        background: "#FFFFFF",
-                        color: tema.texto,
-                        borderRadius: 10,
-                        padding: "8px 12px",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      Exportar CSV
-                    </button>
-                  </div>
-
-                  <div style={{ fontSize: 12, color: tema.textoSuave, marginTop: 12 }}>
-                    Backup compatível confirmado com o formato exportado pelo app, incluindo protocolo, marcacoes e
-                    preferencias.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: tema.superficie,
-                border: `1px solid ${tema.borda}`,
-                borderRadius: 14,
-                padding: 14,
-                marginBottom: 16,
-              }}
-            >
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Acessibilidade e rotina</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={prefs.fonteGrande}
-                    onChange={(e) => setPrefs((prev) => ({ ...prev, fonteGrande: e.target.checked }))}
-                  />
-                  Fonte maior
-                </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={prefs.altoContraste}
-                    onChange={(e) => setPrefs((prev) => ({ ...prev, altoContraste: e.target.checked }))}
-                  />
-                  Alto contraste
-                </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={prefs.lembretesAtivos}
-                    onChange={(e) => setPrefs((prev) => ({ ...prev, lembretesAtivos: e.target.checked }))}
-                  />
-                  Lembretes ativos
-                </label>
-                <button
-                  onClick={ativarPermissaoLembrete}
-                  style={{
-                    border: "1px solid #BFDBFE",
-                    background: "#EFF6FF",
-                    color: "#1D4ED8",
-                    borderRadius: 10,
-                    padding: "8px 12px",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Permitir notificacoes
-                </button>
-              </div>
-              <div style={{ display: "flex", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-                <label style={{ fontSize: 13 }}>
-                  Lembrete manha
-                  <input
-                    type="time"
-                    value={prefs.horariosLembrete.manha}
-                    onChange={(e) =>
-                      setPrefs((prev) => ({
-                        ...prev,
-                        horariosLembrete: { ...prev.horariosLembrete, manha: e.target.value },
-                      }))
-                    }
-                    style={{ marginLeft: 8 }}
-                  />
-                </label>
-                <label style={{ fontSize: 13 }}>
-                  Lembrete noite
-                  <input
-                    type="time"
-                    value={prefs.horariosLembrete.noite}
-                    onChange={(e) =>
-                      setPrefs((prev) => ({
-                        ...prev,
-                        horariosLembrete: { ...prev.horariosLembrete, noite: e.target.value },
-                      }))
-                    }
-                    style={{ marginLeft: 8 }}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: tema.superficie,
-                border: `1px solid ${tema.borda}`,
-                borderRadius: 14,
-                padding: 14,
-                marginBottom: 16,
-              }}
-            >
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Historico de adesao</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 12 }}>
-                  <div style={{ fontSize: 12, color: tema.textoSuave }}>Ultimos 7 dias</div>
-                  <div style={{ fontSize: 24, fontWeight: 800 }}>{historico7d.pct}%</div>
-                  <div style={{ fontSize: 13 }}>{historico7d.feitas} de {historico7d.total} doses</div>
-                </div>
-                <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 12 }}>
-                  <div style={{ fontSize: 12, color: tema.textoSuave }}>Mes atual</div>
-                  <div style={{ fontSize: 24, fontWeight: 800 }}>{historicoMes.pct}%</div>
-                  <div style={{ fontSize: 13 }}>{historicoMes.feitas} de {historicoMes.total} doses</div>
-                </div>
-              </div>
-            </div>
-
-            <div
-              style={{
                 background: tema.superficie,
                 border: `1px solid ${tema.borda}`,
                 borderRadius: 14,
@@ -3046,6 +2596,9 @@ export default function App() {
                 marginBottom: 14,
               }}
             >
+              <div style={{ fontSize: 13, color: tema.textoSuave, marginBottom: 12 }}>
+                Guia do protocolo: aqui ficam apenas os dados do protocolo atual, com edicao, datas e agenda de cada item.
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
                 <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Protocolo personalizado</h3>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -3245,6 +2798,493 @@ export default function App() {
 
         {aba === 3 && (
           <div>
+            <div
+              style={{
+                background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
+                border: `1px solid ${tema.borda}`,
+                borderRadius: 18,
+                padding: 16,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Conta e sincronizacao</div>
+                  <div style={{ fontSize: 13, color: tema.textoSuave }}>
+                    Gerencie sua conta, acompanhe o status da nuvem e controle a sincronizacao entre dispositivos.
+                  </div>
+                </div>
+                <div
+                  style={{
+                    borderRadius: 999,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: sessao ? "#F0FDF4" : "#FFFFFF",
+                    border: `1px solid ${sessao ? "#BBF7D0" : tema.borda}`,
+                    color: sessao ? "#166534" : tema.textoSuave,
+                  }}
+                >
+                  {sincronizandoNuvem ? "Sincronizando..." : sessao ? "Conta conectada" : "Modo local"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "#FFFFFF",
+                  border: `1px solid ${tema.borda}`,
+                  borderRadius: 14,
+                  padding: 14,
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Conta e sincronizacao</div>
+                <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>
+                  O app sempre salva no navegador. Quando a conta esta ativa, ele tambem sincroniza com o Supabase.
+                </div>
+
+                {!supabaseConfigurado ? (
+                  <div
+                    style={{
+                      background: "#FFFBEB",
+                      border: "1px solid #FDE68A",
+                      borderRadius: 12,
+                      padding: 12,
+                      fontSize: 13,
+                      color: "#92400E",
+                    }}
+                  >
+                    Supabase nao configurado neste ambiente. Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
+                    no `.env.local` ou nas variaveis do Netlify para ativar a sincronizacao.
+                  </div>
+                ) : modoRecuperacaoSenha ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                    <div style={{ gridColumn: "1 / -1", fontSize: 13, color: tema.textoSuave }}>
+                      O link de recuperacao foi reconhecido. Defina abaixo a nova senha da sua conta.
+                    </div>
+                    <label style={{ fontSize: 12 }}>
+                      Nova senha
+                      <input
+                        type="password"
+                        value={novaSenha}
+                        onChange={(e) => setNovaSenha(e.target.value)}
+                        placeholder="Nova senha"
+                        style={{ width: "100%", marginTop: 2 }}
+                      />
+                    </label>
+                    <label style={{ fontSize: 12 }}>
+                      Confirmar nova senha
+                      <input
+                        type="password"
+                        value={confirmacaoSenha}
+                        onChange={(e) => setConfirmacaoSenha(e.target.value)}
+                        placeholder="Repita a nova senha"
+                        style={{ width: "100%", marginTop: 2 }}
+                      />
+                    </label>
+                    <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <button
+                        onClick={redefinirSenha}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: "1px solid #BBF7D0",
+                          background: "#F0FDF4",
+                          color: "#166534",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Salvar nova senha
+                      </button>
+                    </div>
+                    <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
+                      Status: {sincronizandoNuvem ? "Processando..." : syncStatus}
+                    </div>
+                  </div>
+                ) : !sessao ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                    <label style={{ fontSize: 12 }}>
+                      Email
+                      <input
+                        type="email"
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        placeholder="voce@exemplo.com"
+                        style={{ width: "100%", marginTop: 2 }}
+                      />
+                    </label>
+                    <label style={{ fontSize: 12 }}>
+                      Senha
+                      <input
+                        type="password"
+                        value={authSenha}
+                        onChange={(e) => setAuthSenha(e.target.value)}
+                        placeholder="Sua senha"
+                        style={{ width: "100%", marginTop: 2 }}
+                      />
+                    </label>
+                    <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <button
+                        onClick={cadastrarContaNuvem}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: "1px solid #BFDBFE",
+                          background: "#EFF6FF",
+                          color: "#1D4ED8",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Criar conta
+                      </button>
+                      <button
+                        onClick={entrarContaNuvem}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: `1px solid ${tema.borda}`,
+                          background: "#FFFFFF",
+                          color: tema.texto,
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Entrar
+                      </button>
+                      <button
+                        onClick={enviarRecuperacaoSenha}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: "1px solid #E2E8F0",
+                          background: "#F8FAFC",
+                          color: tema.texto,
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Esqueci minha senha
+                      </button>
+                    </div>
+                    <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
+                      Status: {sincronizandoNuvem ? "Processando..." : syncStatus}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 12 }}>
+                      <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
+                        <div style={{ fontSize: 11, color: tema.textoSuave }}>Conta</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, wordBreak: "break-word" }}>{sessao.user.email}</div>
+                      </div>
+                      <div style={{ background: "#F0FDF4", borderRadius: 12, padding: 12 }}>
+                        <div style={{ fontSize: 11, color: "#166534" }}>Status</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: "#166534" }}>
+                          {sincronizandoNuvem ? "Sincronizando..." : "Sincronizado"}
+                        </div>
+                      </div>
+                      <div style={{ background: "#EFF6FF", borderRadius: 12, padding: 12 }}>
+                        <div style={{ fontSize: 11, color: "#1D4ED8" }}>Ultima sync</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: "#1D4ED8" }}>
+                          {ultimaSyncEm ? formatarDataHora(ultimaSyncEm) : "Pendente"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>{syncStatus}</div>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <button
+                        onClick={sincronizarAgora}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: "1px solid #BBF7D0",
+                          background: "#F0FDF4",
+                          color: "#166534",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Sincronizar agora
+                      </button>
+                      <button
+                        onClick={baixarDaNuvemAgora}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: "1px solid #BFDBFE",
+                          background: "#EFF6FF",
+                          color: "#1D4ED8",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Recarregar da nuvem
+                      </button>
+                      <button
+                        onClick={sairContaNuvem}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: "1px solid #FECACA",
+                          background: "#FEF2F2",
+                          color: "#B91C1C",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Sair
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: tema.superficie,
+                border: `1px solid ${tema.borda}`,
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Acessibilidade e rotina</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={prefs.fonteGrande}
+                    onChange={(e) => setPrefs((prev) => ({ ...prev, fonteGrande: e.target.checked }))}
+                  />
+                  Fonte maior
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={prefs.altoContraste}
+                    onChange={(e) => setPrefs((prev) => ({ ...prev, altoContraste: e.target.checked }))}
+                  />
+                  Alto contraste
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={prefs.lembretesAtivos}
+                    onChange={(e) => setPrefs((prev) => ({ ...prev, lembretesAtivos: e.target.checked }))}
+                  />
+                  Lembretes ativos
+                </label>
+                <button
+                  onClick={ativarPermissaoLembrete}
+                  style={{
+                    border: "1px solid #BFDBFE",
+                    background: "#EFF6FF",
+                    color: "#1D4ED8",
+                    borderRadius: 10,
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Permitir notificacoes
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+                <label style={{ fontSize: 13 }}>
+                  Lembrete manha
+                  <input
+                    type="time"
+                    value={prefs.horariosLembrete.manha}
+                    onChange={(e) =>
+                      setPrefs((prev) => ({
+                        ...prev,
+                        horariosLembrete: { ...prev.horariosLembrete, manha: e.target.value },
+                      }))
+                    }
+                    style={{ marginLeft: 8 }}
+                  />
+                </label>
+                <label style={{ fontSize: 13 }}>
+                  Lembrete noite
+                  <input
+                    type="time"
+                    value={prefs.horariosLembrete.noite}
+                    onChange={(e) =>
+                      setPrefs((prev) => ({
+                        ...prev,
+                        horariosLembrete: { ...prev.horariosLembrete, noite: e.target.value },
+                      }))
+                    }
+                    style={{ marginLeft: 8 }}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {aba === 4 && (
+          <div>
+            <div
+              style={{
+                background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
+                border: `1px solid ${tema.borda}`,
+                borderRadius: 18,
+                padding: 16,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Backup e restauracao</div>
+                  <div style={{ fontSize: 13, color: tema.textoSuave }}>
+                    Importe um backup anterior, exporte o estado atual e envie o conteúdo restaurado para o Supabase quando desejar.
+                  </div>
+                </div>
+                <div
+                  style={{
+                    borderRadius: 999,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: sessao ? "#F0FDF4" : "#FFFFFF",
+                    border: `1px solid ${sessao ? "#BBF7D0" : tema.borda}`,
+                    color: sessao ? "#166534" : tema.textoSuave,
+                  }}
+                >
+                  {sessao ? "Destino local + nuvem" : "Destino somente local"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "#FFFFFF",
+                  border: `1px solid ${tema.borda}`,
+                  borderRadius: 14,
+                  padding: 14,
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Backups e restauracao</div>
+                <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>
+                  Importe um backup JSON antigo para substituir os dados atuais. Se a conta estiver conectada, o
+                  mesmo backup sobe para o Supabase logo em seguida.
+                </div>
+
+                <input
+                  ref={inputBackupRef}
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={importarBackupJSON}
+                  style={{ display: "none" }}
+                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 12 }}>
+                  <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
+                    <div style={{ fontSize: 11, color: tema.textoSuave }}>Ultimo backup lido</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, wordBreak: "break-word" }}>
+                      {nomeArquivoImportado || "Nenhum arquivo importado ainda"}
+                    </div>
+                  </div>
+                  <div style={{ background: "#FFF7ED", borderRadius: 12, padding: 12 }}>
+                    <div style={{ fontSize: 11, color: "#9A3412" }}>Destino</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, color: "#9A3412" }}>
+                      {sessao ? "Local + Supabase" : "Somente local"}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <button
+                    onClick={abrirSeletorBackup}
+                    disabled={importandoBackup || sincronizandoNuvem}
+                    style={{
+                      border: "1px solid #BFDBFE",
+                      background: "#EFF6FF",
+                      color: "#1D4ED8",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: importandoBackup || sincronizandoNuvem ? "wait" : "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {importandoBackup ? "Importando..." : "Importar backup JSON"}
+                  </button>
+                  <button
+                    onClick={exportarJSON}
+                    style={{
+                      border: `1px solid ${tema.borda}`,
+                      background: "#FFFFFF",
+                      color: tema.texto,
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Exportar JSON
+                  </button>
+                  <button
+                    onClick={exportarCSV}
+                    style={{
+                      border: `1px solid ${tema.borda}`,
+                      background: "#FFFFFF",
+                      color: tema.texto,
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Exportar CSV
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 12, color: tema.textoSuave, marginTop: 12 }}>
+                  Backup compatível confirmado com o formato exportado pelo app, incluindo protocolo, marcacoes,
+                  preferencias e migracoes.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {aba === 5 && (
+          <div>
+            <div
+              style={{
+                background: tema.superficie,
+                border: `1px solid ${tema.borda}`,
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Historico de adesao</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, color: tema.textoSuave }}>Ultimos 7 dias</div>
+                  <div style={{ fontSize: 24, fontWeight: 800 }}>{historico7d.pct}%</div>
+                  <div style={{ fontSize: 13 }}>{historico7d.feitas} de {historico7d.total} doses</div>
+                </div>
+                <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, color: tema.textoSuave }}>Mes atual</div>
+                  <div style={{ fontSize: 24, fontWeight: 800 }}>{historicoMes.pct}%</div>
+                  <div style={{ fontSize: 13 }}>{historicoMes.feitas} de {historicoMes.total} doses</div>
+                </div>
+              </div>
+            </div>
+
             <div
               style={{
                 background: tema.superficie,
