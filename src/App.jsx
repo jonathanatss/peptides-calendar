@@ -4,7 +4,7 @@ import { getSupabaseClient, isSupabaseConfigurado } from "./lib/supabase";
 
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const ABAS = ["Hoje", "Semana", "Guia", "Conta e sincronizacao", "Backup e restauracao", "Historico"];
+const ABAS = ["Hoje", "Semana", "Protocolo", "Conta", "Backup", "Historico"];
 const CHAVE_MARCADAS = "pc-doses-marcadas-v3";
 const CHAVE_PROTOCOLO = "pc-protocolo-v1";
 const CHAVE_PREFS = "pc-preferencias-v1";
@@ -910,6 +910,43 @@ function montarMetricas(inicioStr, fimStr, protocolo, marcadas, hojeStr) {
   return { total, feitas, pct };
 }
 
+function montarInsightsAdesao(dataHoje, protocolo, marcadas) {
+  let sequenciaAtual = 0;
+
+  for (let offset = 0; offset < 120; offset += 1) {
+    const data = addDays(dataHoje, -offset);
+    const doses = getDosesParaDia(data, protocolo);
+    if (!doses.length) continue;
+
+    const diaCompleto = doses.every((dose) => marcadas[`${data}-${dose.id}`]);
+    if (!diaCompleto) break;
+    sequenciaAtual += 1;
+  }
+
+  let esquecidas7d = 0;
+  let diasComFalha7d = 0;
+
+  for (let offset = 0; offset < 7; offset += 1) {
+    const data = addDays(dataHoje, -offset);
+    const doses = getDosesParaDia(data, protocolo);
+    const faltantes = doses.filter((dose) => !marcadas[`${data}-${dose.id}`]).length;
+    esquecidas7d += faltantes;
+    if (faltantes > 0) diasComFalha7d += 1;
+  }
+
+  return { sequenciaAtual, esquecidas7d, diasComFalha7d };
+}
+
+function ordenarDosesParaUso(doses) {
+  const peso = { manha: 0, outro: 1, noite: 2 };
+  return [...doses].sort((a, b) => {
+    const periodoA = peso[inferirPeriodo(a.horario)] ?? 1;
+    const periodoB = peso[inferirPeriodo(b.horario)] ?? 1;
+    if (periodoA !== periodoB) return periodoA - periodoB;
+    return (a.nome || "").localeCompare(b.nome || "");
+  });
+}
+
 function montarHistoricoAplicacoes(marcadas, protocolo) {
   return Object.entries(marcadas)
     .filter(([, aplicada]) => !!aplicada)
@@ -1427,10 +1464,12 @@ export default function App() {
   function toggle(doseId, data = dataHoje) {
     if (data > dataHoje) return;
     const chave = `${data}-${doseId}`;
+    const dose = protocolo.find((item) => item.id === doseId);
     setMarcadas((prev) => {
       const anterior = !!prev[chave];
       const proximo = !anterior;
       setUltimaAcao({ chave, anterior, proximo, data, doseId });
+      setMensagem(proximo ? `${dose?.nome || "Dose"} marcada.` : `${dose?.nome || "Dose"} voltou para pendente.`);
       return { ...prev, [chave]: proximo };
     });
   }
@@ -2129,10 +2168,22 @@ export default function App() {
   }
 
   const dosesHoje = useMemo(() => getDosesParaDia(dataHoje, protocolo), [dataHoje, protocolo]);
+  const dosesHojeOrdenadas = useMemo(() => ordenarDosesParaUso(dosesHoje), [dosesHoje]);
+  const pendentesHoje = useMemo(() => dosesHojeOrdenadas.filter((d) => !isMarcada(d.id)), [dosesHojeOrdenadas, marcadas]);
+  const proximaDoseHoje = pendentesHoje[0] || null;
   const marcadasHoje = useMemo(() => dosesHoje.filter((d) => isMarcada(d.id)).length, [dosesHoje, marcadas]);
   const faltamHoje = Math.max(dosesHoje.length - marcadasHoje, 0);
   const progresso = dosesHoje.length ? Math.round((marcadasHoje / dosesHoje.length) * 100) : 0;
   const tudoFeito = dosesHoje.length > 0 && marcadasHoje === dosesHoje.length;
+  const resumoSincronizacao = sincronizandoNuvem
+    ? "Sincronizando..."
+    : modoRecuperacaoSenha
+    ? "Redefinindo senha"
+    : sessao
+    ? ultimaSyncEm
+      ? `Sincronizado ${formatarDataHora(ultimaSyncEm)}`
+      : "Salvo na nuvem"
+    : "Salvo neste aparelho";
 
   const semanaDeHoje = inicioSemana(dataHoje);
   const diasSemana = semana7(semanaAtual);
@@ -2150,6 +2201,10 @@ export default function App() {
   const historicoMes = useMemo(
     () => montarMetricas(inicioMes, dataHoje, protocolo, marcadas, dataHoje),
     [inicioMes, dataHoje, protocolo, marcadas]
+  );
+  const insightsAdesao = useMemo(
+    () => montarInsightsAdesao(dataHoje, protocolo, marcadas),
+    [dataHoje, protocolo, marcadas]
   );
   const resumoClinico = useMemo(() => montarResumoClinico(HISTORICO_CLINICO), []);
   const fasesClinicas = useMemo(() => montarFasesClinicas(HISTORICO_CLINICO), []);
@@ -2187,9 +2242,45 @@ export default function App() {
     >
       <style>
         {`
+          * {
+            box-sizing: border-box;
+          }
+
+          button, input, select, textarea {
+            font: inherit;
+          }
+
+          button {
+            -webkit-tap-highlight-color: transparent;
+          }
+
+          input, select, textarea {
+            border: 1px solid ${tema.borda};
+            border-radius: 10px;
+            min-height: 44px;
+            padding: 9px 11px;
+            background: #FFFFFF;
+            color: ${tema.texto};
+          }
+
+          button {
+            min-height: 44px;
+          }
+
           button:focus-visible, input:focus-visible, textarea:focus-visible {
             outline: 3px solid ${tema.destaque};
             outline-offset: 2px;
+          }
+
+          @media (max-width: 540px) {
+            .app-shell {
+              padding-left: 12px !important;
+              padding-right: 12px !important;
+            }
+
+            .mobile-stack {
+              grid-template-columns: 1fr !important;
+            }
           }
         `}
       </style>
@@ -2264,7 +2355,7 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 30px" }}>
+      <div className="app-shell" style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 30px" }}>
         {mensagem && (
           <div
             role="status"
@@ -2282,140 +2373,197 @@ export default function App() {
           </div>
         )}
 
-        <div
-          style={{
-            background: tema.superficie,
-            border: `1px solid ${tema.borda}`,
-            borderRadius: 14,
-            padding: 14,
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            <button
-              onClick={desfazerUltimaAcao}
-              disabled={!ultimaAcao}
-              style={{
-                border: `1px solid ${tema.borda}`,
-                background: !ultimaAcao ? "#F8FAFC" : "#FFFFFF",
-                color: !ultimaAcao ? "#94A3B8" : tema.texto,
-                borderRadius: 10,
-                padding: "8px 12px",
-                cursor: !ultimaAcao ? "not-allowed" : "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Desfazer ultima marcacao
-            </button>
-            <button
-              onClick={exportarPDF}
-              style={{
-                border: `1px solid ${tema.borda}`,
-                background: "#FFFFFF",
-                color: tema.texto,
-                borderRadius: 10,
-                padding: "8px 12px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Exportar PDF
-            </button>
-            <button
-              onClick={exportarJSON}
-              style={{
-                border: `1px solid ${tema.borda}`,
-                background: "#FFFFFF",
-                color: tema.texto,
-                borderRadius: 10,
-                padding: "8px 12px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Exportar JSON
-            </button>
-            <button
-              onClick={exportarCSV}
-              style={{
-                border: `1px solid ${tema.borda}`,
-                background: "#FFFFFF",
-                color: tema.texto,
-                borderRadius: 10,
-                padding: "8px 12px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Exportar CSV
-            </button>
-            {installPromptEvent && (
-              <button
-                onClick={instalarApp}
-                style={{
-                  border: "1px solid #BFDBFE",
-                  background: "#EFF6FF",
-                  color: "#1D4ED8",
-                  borderRadius: 10,
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Instalar app
-              </button>
-            )}
-            {!installPromptEvent && precisaInstalacaoManualIOS && (
-              <button
-                onClick={() => setAba(3)}
-                style={{
-                  border: "1px solid #BFDBFE",
-                  background: "#EFF6FF",
-                  color: "#1D4ED8",
-                  borderRadius: 10,
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Instalar no iPhone
-              </button>
-            )}
-          </div>
-        </div>
-
         {aba === 0 && (
           <div>
             <div
               style={{
-                background: tudoFeito ? "#F0FDF4" : tema.superficie,
-                border: `1px solid ${tudoFeito ? "#86EFAC" : tema.borda}`,
-                borderRadius: 14,
-                padding: "14px 18px",
-                marginBottom: 20,
+                background: "#0F172A",
+                border: "1px solid #1E293B",
+                borderRadius: 18,
+                padding: 18,
+                marginBottom: 14,
+                color: "#FFFFFF",
+                boxShadow: "0 18px 45px rgba(15, 23, 42, .16)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  alignItems: "flex-start",
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: "#CBD5E1", marginBottom: 4 }}>
+                    {DIAS_SEMANA[parseDate(dataHoje).getDay()]}, {formatarData(dataHoje)}
+                  </div>
+                  <div style={{ fontSize: 26, fontWeight: 850, lineHeight: 1.1 }}>
+                    {tudoFeito
+                      ? "Tudo feito hoje"
+                      : dosesHoje.length === 0
+                      ? "Dia sem doses"
+                      : `${faltamHoje} pendente${faltamHoje === 1 ? "" : "s"}`}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#CBD5E1", marginTop: 6 }}>
+                    {dosesHoje.length === 0
+                      ? "Nenhuma dose programada para hoje."
+                      : `${marcadasHoje} de ${dosesHoje.length} doses concluidas.`}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    minWidth: 72,
+                    borderRadius: "50%",
+                    background: `conic-gradient(${tudoFeito ? "#22C55E" : "#38BDF8"} ${progresso * 3.6}deg, #25324A 0deg)`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  aria-label={`Progresso de hoje: ${progresso}%`}
+                >
+                  <div
+                    style={{
+                      width: 54,
+                      height: 54,
+                      borderRadius: "50%",
+                      background: "#0F172A",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#FFFFFF",
+                      fontWeight: 850,
+                    }}
+                  >
+                    {tudoFeito ? "OK" : `${progresso}%`}
+                  </div>
+                </div>
+              </div>
+
+              {proximaDoseHoje ? (
+                <button
+                  onClick={() => toggle(proximaDoseHoje.id)}
+                  style={{
+                    width: "100%",
+                    minHeight: 62,
+                    border: "1px solid #38BDF8",
+                    background: "#E0F2FE",
+                    color: "#075985",
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <span>
+                    <span style={{ display: "block", fontSize: 12, fontWeight: 750, color: "#0369A1", marginBottom: 3 }}>
+                      Proxima acao
+                    </span>
+                    <span style={{ display: "block", fontSize: 17, fontWeight: 850 }}>{proximaDoseHoje.nome}</span>
+                    <span style={{ display: "block", fontSize: 12, color: "#0C4A6E", marginTop: 2 }}>
+                      {proximaDoseHoje.dose} · {proximaDoseHoje.horario}
+                    </span>
+                  </span>
+                  <span
+                    style={{
+                      background: "#0284C7",
+                      color: "#FFFFFF",
+                      borderRadius: 999,
+                      padding: "8px 12px",
+                      fontSize: 12,
+                      fontWeight: 850,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Marcar
+                  </span>
+                </button>
+              ) : (
+                <div
+                  style={{
+                    background: tudoFeito ? "#DCFCE7" : "#F8FAFC",
+                    color: tudoFeito ? "#166534" : "#475569",
+                    borderRadius: 14,
+                    padding: 14,
+                    fontSize: 14,
+                    fontWeight: 700,
+                  }}
+                >
+                  {tudoFeito ? "Rotina de hoje concluida. Os dados ficam salvos automaticamente." : "Hoje nao ha nenhuma acao pendente."}
+                </div>
+              )}
+            </div>
+
+            <div
+              className="mobile-stack"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              {[
+                ["Feitas", `${marcadasHoje}/${dosesHoje.length || 0}`, "#ECFDF5", "#166534"],
+                ["Pendentes", String(faltamHoje), faltamHoje ? "#FFF7ED" : "#ECFDF5", faltamHoje ? "#9A3412" : "#166534"],
+                ["Sequencia", `${insightsAdesao.sequenciaAtual} dia${insightsAdesao.sequenciaAtual === 1 ? "" : "s"}`, "#EFF6FF", "#1D4ED8"],
+              ].map(([rotulo, valor, fundo, cor]) => (
+                <div
+                  key={rotulo}
+                  style={{
+                    background: fundo,
+                    border: `1px solid ${tema.borda}`,
+                    borderRadius: 12,
+                    padding: 12,
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: tema.textoSuave }}>{rotulo}</div>
+                  <div style={{ fontSize: 20, fontWeight: 850, color: cor, marginTop: 2 }}>{valor}</div>
+                </div>
+              ))}
+            </div>
+
+            <div
+              style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 12,
+                marginBottom: 10,
               }}
             >
               <div>
-                <div style={{ fontSize: 13, color: tema.textoSuave }}>
-                  {DIAS_SEMANA[parseDate(dataHoje).getDay()]}, {formatarData(dataHoje)}
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 700, marginTop: 2 }}>
-                  {tudoFeito
-                    ? "Dia completo!"
-                    : dosesHoje.length === 0
-                    ? "Hoje e dia de descanso"
-                    : `${marcadasHoje} de ${dosesHoje.length} doses feitas`}
-                </div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>Rotina de hoje</div>
+                <div style={{ fontSize: 12, color: tema.textoSuave }}>{resumoSincronizacao}</div>
               </div>
-              {tudoFeito && <div style={{ fontSize: 32 }}>🎉</div>}
+              <button
+                onClick={desfazerUltimaAcao}
+                disabled={!ultimaAcao}
+                style={{
+                  border: `1px solid ${tema.borda}`,
+                  background: !ultimaAcao ? "#F8FAFC" : "#FFFFFF",
+                  color: !ultimaAcao ? "#94A3B8" : tema.texto,
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  cursor: !ultimaAcao ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                }}
+              >
+                Desfazer
+              </button>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {dosesHoje.map((dose) => {
+              {dosesHojeOrdenadas.map((dose) => {
                 const feita = isMarcada(dose.id);
                 return (
                   <button
@@ -2424,9 +2572,10 @@ export default function App() {
                     aria-pressed={feita}
                     aria-label={`${dose.nome} ${dose.dose}, ${feita ? "marcada" : "pendente"}`}
                     style={{
-                      background: feita ? dose.corFundo : tema.superficie,
-                      border: `2px solid ${feita ? dose.cor : tema.borda}`,
-                      borderRadius: 16,
+                      background: feita ? "#F0FDF4" : tema.superficie,
+                      border: `1px solid ${feita ? "#86EFAC" : tema.borda}`,
+                      borderLeft: `5px solid ${feita ? "#22C55E" : "#F59E0B"}`,
+                      borderRadius: 12,
                       padding: "16px",
                       cursor: "pointer",
                       textAlign: "left",
@@ -2441,10 +2590,10 @@ export default function App() {
                       style={{
                         width: 48,
                         height: 48,
-                        borderRadius: "50%",
+                        borderRadius: 12,
                         flexShrink: 0,
-                        background: feita ? dose.cor : "#F1F5F9",
-                        border: `2px solid ${feita ? dose.cor : tema.borda}`,
+                        background: feita ? "#22C55E" : "#F8FAFC",
+                        border: `1px solid ${feita ? "#22C55E" : tema.borda}`,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -2460,7 +2609,7 @@ export default function App() {
                         <strong
                           style={{
                             fontSize: 18,
-                            color: feita ? dose.cor : tema.texto,
+                            color: tema.texto,
                             textDecoration: feita ? "line-through" : "none",
                           }}
                         >
@@ -2468,8 +2617,8 @@ export default function App() {
                         </strong>
                         <span
                           style={{
-                            background: feita ? dose.cor : "#F1F5F9",
-                            color: feita ? "#FFF" : "#475569",
+                            background: feita ? "#DCFCE7" : "#FFF7ED",
+                            color: feita ? "#166534" : "#9A3412",
                             borderRadius: 20,
                             padding: "4px 10px",
                             fontSize: 12,
@@ -2481,13 +2630,23 @@ export default function App() {
                       </div>
                       <div style={{ fontSize: 13, color: tema.textoSuave, marginTop: 4 }}>{dose.horario}</div>
                       <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{dose.descricao}</div>
-                      <div style={{ marginTop: 6, fontSize: 12, color: feita ? tema.sucesso : "#B45309", fontWeight: 600 }}>
-                        {feita ? "Status: Feito" : "Status: Pendente"}
+                      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={{ fontSize: 12, color: feita ? "#166534" : "#9A3412", fontWeight: 750 }}>
+                          {feita ? "Feito" : "Pendente"}
+                        </span>
+                        <span style={{ fontSize: 12, color: tema.textoSuave }}>
+                          {formatarAgendaDose(dose)}
+                        </span>
                       </div>
                     </div>
                   </button>
                 );
               })}
+              {!dosesHojeOrdenadas.length && (
+                <div style={{ textAlign: "center", padding: 28, color: tema.textoSuave }}>
+                  Nenhuma dose programada para hoje.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2924,9 +3083,9 @@ export default function App() {
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Conta e sincronizacao</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Conta</div>
                   <div style={{ fontSize: 13, color: tema.textoSuave }}>
-                    Gerencie sua conta, acompanhe o status da nuvem e controle a sincronizacao entre dispositivos.
+                    Acompanhe onde seus dados estao salvos e entre na conta quando quiser sincronizar entre dispositivos.
                   </div>
                 </div>
                 <div
@@ -2935,12 +3094,12 @@ export default function App() {
                     padding: "6px 10px",
                     fontSize: 12,
                     fontWeight: 700,
-                    background: sessao ? "#F0FDF4" : "#FFFFFF",
-                    border: `1px solid ${sessao ? "#BBF7D0" : tema.borda}`,
-                    color: sessao ? "#166534" : tema.textoSuave,
+                    background: sessao && !modoRecuperacaoSenha ? "#F0FDF4" : "#FFFFFF",
+                    border: `1px solid ${sessao && !modoRecuperacaoSenha ? "#BBF7D0" : tema.borda}`,
+                    color: sessao && !modoRecuperacaoSenha ? "#166534" : tema.textoSuave,
                   }}
                 >
-                  {sincronizandoNuvem ? "Sincronizando..." : modoRecuperacaoSenha ? "Redefinindo senha" : sessao ? "Conta conectada" : "Modo local"}
+                  {resumoSincronizacao}
                 </div>
               </div>
 
@@ -2952,9 +3111,9 @@ export default function App() {
                   padding: 14,
                 }}
               >
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Conta e sincronizacao</div>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Acesso e nuvem</div>
                 <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>
-                  O app sempre salva no navegador. Quando a conta esta ativa, ele tambem sincroniza com o Supabase.
+                  O app sempre salva neste aparelho. Com a conta ativa, uma copia tambem fica na nuvem.
                 </div>
 
                 {!supabaseConfigurado ? (
@@ -2972,103 +3131,121 @@ export default function App() {
                     no `.env.local` ou nas variaveis do Netlify para ativar a sincronizacao.
                   </div>
                 ) : modoRecuperacaoSenha ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                    <div style={{ gridColumn: "1 / -1", fontSize: 13, color: tema.textoSuave }}>
-                      O link de recuperacao foi reconhecido. Defina abaixo a nova senha da sua conta.
+                  <div style={{ display: "grid", gap: 14 }}>
+                    <div
+                      style={{
+                        background: "#EFF6FF",
+                        border: "1px solid #BFDBFE",
+                        borderRadius: 14,
+                        padding: 14,
+                      }}
+                    >
+                      <div style={{ fontSize: 18, fontWeight: 850, color: "#1D4ED8" }}>Definir nova senha</div>
+                      <div style={{ fontSize: 13, color: tema.textoSuave, marginTop: 4 }}>
+                        O link foi reconhecido. Escolha uma nova senha e depois entre manualmente com ela.
+                      </div>
                     </div>
-                    <label style={{ fontSize: 12 }}>
-                      Nova senha
-                      <input
-                        type="password"
-                        value={novaSenha}
-                        onChange={(e) => setNovaSenha(e.target.value)}
-                        placeholder="Nova senha"
-                        style={{ width: "100%", marginTop: 2 }}
-                      />
-                    </label>
-                    <label style={{ fontSize: 12 }}>
-                      Confirmar nova senha
-                      <input
-                        type="password"
-                        value={confirmacaoSenha}
-                        onChange={(e) => setConfirmacaoSenha(e.target.value)}
-                        placeholder="Repita a nova senha"
-                        style={{ width: "100%", marginTop: 2 }}
-                      />
-                    </label>
-                    <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      <button
-                        onClick={redefinirSenha}
-                        disabled={sincronizandoNuvem}
-                        style={{
-                          border: "1px solid #BBF7D0",
-                          background: "#F0FDF4",
-                          color: "#166534",
-                          borderRadius: 10,
-                          padding: "8px 12px",
-                          cursor: sincronizandoNuvem ? "wait" : "pointer",
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Salvar nova senha
-                      </button>
+
+                    <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(180px, 1fr))", gap: 10 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700 }}>
+                        Nova senha
+                        <input
+                          type="password"
+                          value={novaSenha}
+                          onChange={(e) => setNovaSenha(e.target.value)}
+                          placeholder="Nova senha"
+                          style={{ width: "100%", marginTop: 4 }}
+                        />
+                      </label>
+                      <label style={{ fontSize: 12, fontWeight: 700 }}>
+                        Confirmar nova senha
+                        <input
+                          type="password"
+                          value={confirmacaoSenha}
+                          onChange={(e) => setConfirmacaoSenha(e.target.value)}
+                          placeholder="Repita a nova senha"
+                          style={{ width: "100%", marginTop: 4 }}
+                        />
+                      </label>
                     </div>
-                    <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
-                      Status: {sincronizandoNuvem ? "Processando..." : syncStatus}
+
+                    <button
+                      onClick={redefinirSenha}
+                      disabled={sincronizandoNuvem}
+                      style={{
+                        width: "100%",
+                        border: "1px solid #16A34A",
+                        background: "#16A34A",
+                        color: "#FFFFFF",
+                        borderRadius: 12,
+                        padding: "12px 14px",
+                        cursor: sincronizandoNuvem ? "wait" : "pointer",
+                        fontFamily: "inherit",
+                        fontWeight: 850,
+                      }}
+                    >
+                      {sincronizandoNuvem ? "Salvando..." : "Salvar nova senha"}
+                    </button>
+
+                    <div style={{ fontSize: 12, color: tema.textoSuave }}>
+                      {syncStatus}
                     </div>
                   </div>
                 ) : !sessao ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                    <label style={{ fontSize: 12 }}>
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(180px, 1fr))", gap: 10 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700 }}>
                       Email
                       <input
                         type="email"
                         value={authEmail}
                         onChange={(e) => setAuthEmail(e.target.value)}
                         placeholder="voce@exemplo.com"
-                        style={{ width: "100%", marginTop: 2 }}
+                        style={{ width: "100%", marginTop: 4 }}
                       />
                     </label>
-                    <label style={{ fontSize: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700 }}>
                       Senha
                       <input
                         type="password"
                         value={authSenha}
                         onChange={(e) => setAuthSenha(e.target.value)}
                         placeholder="Sua senha"
-                        style={{ width: "100%", marginTop: 2 }}
+                        style={{ width: "100%", marginTop: 4 }}
                       />
                     </label>
-                    <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      <button
-                        onClick={cadastrarContaNuvem}
-                        disabled={sincronizandoNuvem}
-                        style={{
-                          border: "1px solid #BFDBFE",
-                          background: "#EFF6FF",
-                          color: "#1D4ED8",
-                          borderRadius: 10,
-                          padding: "8px 12px",
-                          cursor: sincronizandoNuvem ? "wait" : "pointer",
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Criar conta
-                      </button>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       <button
                         onClick={entrarContaNuvem}
+                        disabled={sincronizandoNuvem}
+                        style={{
+                          border: "1px solid #1D4ED8",
+                          background: "#1D4ED8",
+                          color: "#FFFFFF",
+                          borderRadius: 12,
+                          padding: "10px 14px",
+                          cursor: sincronizandoNuvem ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                          fontWeight: 850,
+                        }}
+                      >
+                        Entrar
+                      </button>
+                      <button
+                        onClick={cadastrarContaNuvem}
                         disabled={sincronizandoNuvem}
                         style={{
                           border: `1px solid ${tema.borda}`,
                           background: "#FFFFFF",
                           color: tema.texto,
-                          borderRadius: 10,
-                          padding: "8px 12px",
+                          borderRadius: 12,
+                          padding: "10px 14px",
                           cursor: sincronizandoNuvem ? "wait" : "pointer",
                           fontFamily: "inherit",
                         }}
                       >
-                        Entrar
+                        Criar conta
                       </button>
                       <button
                         onClick={enviarRecuperacaoSenha}
@@ -3077,8 +3254,8 @@ export default function App() {
                           border: "1px solid #E2E8F0",
                           background: "#F8FAFC",
                           color: tema.texto,
-                          borderRadius: 10,
-                          padding: "8px 12px",
+                          borderRadius: 12,
+                          padding: "10px 14px",
                           cursor: sincronizandoNuvem ? "wait" : "pointer",
                           fontFamily: "inherit",
                         }}
@@ -3086,8 +3263,8 @@ export default function App() {
                         Esqueci minha senha
                       </button>
                     </div>
-                    <div style={{ gridColumn: "1 / -1", fontSize: 12, color: tema.textoSuave }}>
-                      Status: {sincronizandoNuvem ? "Processando..." : syncStatus}
+                    <div style={{ fontSize: 12, color: tema.textoSuave }}>
+                      {sincronizandoNuvem ? "Processando..." : syncStatus}
                     </div>
                   </div>
                 ) : (
@@ -3100,7 +3277,7 @@ export default function App() {
                       <div style={{ background: "#F0FDF4", borderRadius: 12, padding: 12 }}>
                         <div style={{ fontSize: 11, color: "#166534" }}>Status</div>
                         <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: "#166534" }}>
-                          {sincronizandoNuvem ? "Sincronizando..." : "Sincronizado"}
+                          {sincronizandoNuvem ? "Sincronizando..." : "Salvo na nuvem"}
                         </div>
                       </div>
                       <div style={{ background: "#EFF6FF", borderRadius: 12, padding: 12 }}>
@@ -3111,7 +3288,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>{syncStatus}</div>
+                    <div style={{ fontSize: 12, color: tema.textoSuave, marginBottom: 12 }}>{resumoSincronizacao}</div>
 
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       <button
@@ -3479,6 +3656,20 @@ export default function App() {
                   >
                     Exportar CSV
                   </button>
+                  <button
+                    onClick={exportarPDF}
+                    style={{
+                      border: `1px solid ${tema.borda}`,
+                      background: "#FFFFFF",
+                      color: tema.texto,
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Exportar PDF
+                  </button>
                 </div>
 
                 <div style={{ fontSize: 12, color: tema.textoSuave, marginTop: 12 }}>
@@ -3502,7 +3693,7 @@ export default function App() {
               }}
             >
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Historico de adesao</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                 <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 12 }}>
                   <div style={{ fontSize: 12, color: tema.textoSuave }}>Ultimos 7 dias</div>
                   <div style={{ fontSize: 24, fontWeight: 800 }}>{historico7d.pct}%</div>
@@ -3512,6 +3703,20 @@ export default function App() {
                   <div style={{ fontSize: 12, color: tema.textoSuave }}>Mes atual</div>
                   <div style={{ fontSize: 24, fontWeight: 800 }}>{historicoMes.pct}%</div>
                   <div style={{ fontSize: 13 }}>{historicoMes.feitas} de {historicoMes.total} doses</div>
+                </div>
+                <div style={{ background: "#ECFDF5", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, color: "#166534" }}>Sequencia atual</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#166534" }}>{insightsAdesao.sequenciaAtual}</div>
+                  <div style={{ fontSize: 13, color: "#166534" }}>dia{insightsAdesao.sequenciaAtual === 1 ? "" : "s"} completo{insightsAdesao.sequenciaAtual === 1 ? "" : "s"}</div>
+                </div>
+                <div style={{ background: insightsAdesao.esquecidas7d ? "#FFF7ED" : "#ECFDF5", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, color: insightsAdesao.esquecidas7d ? "#9A3412" : "#166534" }}>Doses esquecidas</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: insightsAdesao.esquecidas7d ? "#9A3412" : "#166534" }}>
+                    {insightsAdesao.esquecidas7d}
+                  </div>
+                  <div style={{ fontSize: 13, color: insightsAdesao.esquecidas7d ? "#9A3412" : "#166534" }}>
+                    em {insightsAdesao.diasComFalha7d} dia{insightsAdesao.diasComFalha7d === 1 ? "" : "s"} nos ultimos 7
+                  </div>
                 </div>
               </div>
             </div>
