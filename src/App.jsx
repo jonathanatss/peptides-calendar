@@ -11,8 +11,54 @@ const CHAVE_PREFS = "pc-preferencias-v1";
 const CHAVE_MIGRACOES = "pc-migracoes-v1";
 const CHAVE_ANTIGA = "doses-marcadas-v2";
 const CHAVE_ULTIMO_LEMBRETE = "pc-ultimo-lembrete";
+const CHAVE_FLUXO_RECUPERACAO_SENHA = "pc-fluxo-recuperacao-senha";
 const MOTSC_INICIO_PADRAO = "2026-04-27";
 const MOTSC_FIM_PADRAO = "2026-07-03";
+
+function lerParametroDeHash(nome) {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash.replace(/^#/, "");
+  if (!hash) return null;
+  return new URLSearchParams(hash).get(nome);
+}
+
+function urlIndicaRecuperacaoSenha() {
+  if (typeof window === "undefined") return false;
+  const searchParams = new URLSearchParams(window.location.search);
+  return (
+    searchParams.get("modo") === "recuperacao-senha" ||
+    searchParams.get("type") === "recovery" ||
+    lerParametroDeHash("type") === "recovery" ||
+    window.location.hash.includes("type=recovery")
+  );
+}
+
+function marcarFluxoRecuperacaoSenha() {
+  try {
+    sessionStorage.setItem(CHAVE_FLUXO_RECUPERACAO_SENHA, "1");
+  } catch (_) {}
+}
+
+function limparFluxoRecuperacaoSenha() {
+  try {
+    sessionStorage.removeItem(CHAVE_FLUXO_RECUPERACAO_SENHA);
+  } catch (_) {}
+}
+
+function fluxoRecuperacaoSenhaAtivo() {
+  if (urlIndicaRecuperacaoSenha()) return true;
+  try {
+    return sessionStorage.getItem(CHAVE_FLUXO_RECUPERACAO_SENHA) === "1";
+  } catch (_) {
+    return false;
+  }
+}
+
+function montarUrlRecuperacaoSenha() {
+  const url = new URL("/", window.location.origin);
+  url.searchParams.set("modo", "recuperacao-senha");
+  return url.toString();
+}
 
 function criarBhenaPadrao() {
   return {
@@ -1001,6 +1047,7 @@ export default function App() {
   const [importandoBackup, setImportandoBackup] = useState(false);
   const [nomeArquivoImportado, setNomeArquivoImportado] = useState("");
   const inputBackupRef = useRef(null);
+  const saindoAposRedefinirSenhaRef = useRef(false);
 
   const dataHoje = hoje();
   const tema = prefs.altoContraste ? TEMA_ALTO_CONTRASTE : TEMA_PADRAO;
@@ -1164,6 +1211,17 @@ export default function App() {
     }
 
     let ativo = true;
+    const ativarModoRecuperacaoSenha = (status) => {
+      marcarFluxoRecuperacaoSenha();
+      setModoRecuperacaoSenha(true);
+      setAba(3);
+      setNuvemPronta(true);
+      setSyncStatus(status);
+    };
+
+    if (urlIndicaRecuperacaoSenha()) {
+      marcarFluxoRecuperacaoSenha();
+    }
 
     supabase.auth.getSession().then(({ data, error }) => {
       if (!ativo) return;
@@ -1178,15 +1236,14 @@ export default function App() {
       const session = data.session ?? null;
       setSessao(session);
 
-      if (window.location.hash.includes("type=recovery")) {
-        setModoRecuperacaoSenha(true);
-        setAba(3);
-        setSyncStatus("Link de recuperacao detectado. Defina sua nova senha.");
-        setNuvemPronta(true);
+      if (fluxoRecuperacaoSenhaAtivo()) {
+        if (session?.user?.email) setAuthEmail(session.user.email);
+        ativarModoRecuperacaoSenha("Link de recuperacao detectado. Defina sua nova senha.");
         return;
       }
 
       if (session?.user?.id) {
+        limparFluxoRecuperacaoSenha();
         setSyncStatus("Conta conectada. Carregando nuvem...");
         void carregarEstadoDaNuvem(session.user.id);
       } else {
@@ -1202,23 +1259,28 @@ export default function App() {
 
       setSessao(session ?? null);
 
-      if (event === "PASSWORD_RECOVERY") {
-        setModoRecuperacaoSenha(true);
-        setAba(3);
-        setNuvemPronta(true);
-        setSyncStatus("Link de recuperacao validado. Escolha sua nova senha.");
+      if (event === "PASSWORD_RECOVERY" || fluxoRecuperacaoSenhaAtivo()) {
+        if (session?.user?.email) setAuthEmail(session.user.email);
+        ativarModoRecuperacaoSenha("Link de recuperacao validado. Escolha sua nova senha.");
         return;
       }
 
       if (event === "SIGNED_OUT") {
-        setNuvemPronta(false);
+        setNuvemPronta(true);
         setUltimaSyncEm("");
         setModoRecuperacaoSenha(false);
+        limparFluxoRecuperacaoSenha();
+        if (saindoAposRedefinirSenhaRef.current) {
+          saindoAposRedefinirSenhaRef.current = false;
+          setSyncStatus("Senha redefinida. Entre com sua nova senha.");
+          return;
+        }
         setSyncStatus("Sessao encerrada. Modo local ativo.");
         return;
       }
 
       if (session?.user?.id) {
+        limparFluxoRecuperacaoSenha();
         setModoRecuperacaoSenha(false);
         setSyncStatus("Conta conectada. Carregando nuvem...");
         setTimeout(() => {
@@ -1336,7 +1398,7 @@ export default function App() {
   }, [mensagem]);
 
   useEffect(() => {
-    if (carregando || !supabaseConfigurado || !sessao?.user?.id || !nuvemPronta) return undefined;
+    if (carregando || modoRecuperacaoSenha || !supabaseConfigurado || !sessao?.user?.id || !nuvemPronta) return undefined;
     const timer = setTimeout(() => {
       void salvarEstadoNaNuvem();
     }, 1200);
@@ -1345,6 +1407,7 @@ export default function App() {
     carregando,
     marcadas,
     migracoes,
+    modoRecuperacaoSenha,
     nuvemPronta,
     prefs,
     protocolo,
@@ -1549,7 +1612,7 @@ export default function App() {
     setSincronizandoNuvem(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: montarUrlRecuperacaoSenha(),
       });
 
       if (error) throw error;
@@ -1587,14 +1650,22 @@ export default function App() {
       const { error } = await supabase.auth.updateUser({ password: novaSenha });
       if (error) throw error;
 
+      limparFluxoRecuperacaoSenha();
+      window.history.replaceState({}, document.title, window.location.pathname);
+      saindoAposRedefinirSenhaRef.current = true;
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) console.warn("Senha redefinida, mas nao foi possivel encerrar a sessao temporaria", signOutError);
+
       setNovaSenha("");
       setConfirmacaoSenha("");
       setModoRecuperacaoSenha(false);
-      setMensagem("Senha atualizada com sucesso. Agora voce pode entrar normalmente.");
-      setSyncStatus("Senha redefinida com sucesso.");
-      window.history.replaceState({}, document.title, window.location.pathname);
+      setSessao(null);
+      setNuvemPronta(true);
+      setMensagem("Senha atualizada com sucesso. Entre usando a nova senha.");
+      setSyncStatus("Senha redefinida. Entre com sua nova senha.");
     } catch (error) {
       console.error("Falha ao redefinir senha", error);
+      saindoAposRedefinirSenhaRef.current = false;
       setMensagem(error.message || "Nao foi possivel redefinir a senha.");
     } finally {
       setSincronizandoNuvem(false);
@@ -2869,7 +2940,7 @@ export default function App() {
                     color: sessao ? "#166534" : tema.textoSuave,
                   }}
                 >
-                  {sincronizandoNuvem ? "Sincronizando..." : sessao ? "Conta conectada" : "Modo local"}
+                  {sincronizandoNuvem ? "Sincronizando..." : modoRecuperacaoSenha ? "Redefinindo senha" : sessao ? "Conta conectada" : "Modo local"}
                 </div>
               </div>
 
@@ -3323,7 +3394,7 @@ export default function App() {
                     color: sessao ? "#166534" : tema.textoSuave,
                   }}
                 >
-                  {sessao ? "Destino local + nuvem" : "Destino somente local"}
+                  {sessao && !modoRecuperacaoSenha ? "Destino local + nuvem" : "Destino somente local"}
                 </div>
               </div>
 
@@ -3359,7 +3430,7 @@ export default function App() {
                   <div style={{ background: "#FFF7ED", borderRadius: 12, padding: 12 }}>
                     <div style={{ fontSize: 11, color: "#9A3412" }}>Destino</div>
                     <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, color: "#9A3412" }}>
-                      {sessao ? "Local + Supabase" : "Somente local"}
+                      {sessao && !modoRecuperacaoSenha ? "Local + Supabase" : "Somente local"}
                     </div>
                   </div>
                 </div>
