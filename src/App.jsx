@@ -14,6 +14,8 @@ const CHAVE_ULTIMO_LEMBRETE = "pc-ultimo-lembrete";
 const CHAVE_FLUXO_RECUPERACAO_SENHA = "pc-fluxo-recuperacao-senha";
 const MOTSC_INICIO_PADRAO = "2026-04-27";
 const MOTSC_FIM_PADRAO = "2026-07-03";
+const MOTSC_DOSE_ATUAL = "1mg";
+const MOTSC_DESCRICAO_ATUAL = "1mg por aplicacao, 3x por semana. Dose recalibrada por sonolencia; reavaliar tolerancia antes de nova alteracao.";
 
 function lerParametroDeHash(nome) {
   if (typeof window === "undefined") return null;
@@ -122,14 +124,14 @@ const PROTOCOLO_PADRAO = [
   {
     id: "motsc",
     nome: "MOTS-c",
-    dose: "5mg",
+    dose: MOTSC_DOSE_ATUAL,
     horario: "Manha",
     emoji: "⚡",
     cor: "#7C3AED",
     corFundo: "#F5F3FF",
     corBorda: "#DDD6FE",
     diasSemana: ["Seg", "Qua", "Sex"],
-    descricao: "5mg por aplicacao, 3x por semana por 4 semanas, pausa 2 e repete por mais 4.",
+    descricao: MOTSC_DESCRICAO_ATUAL,
     reconstituicao: "Conforme apresentacao utilizada",
     unidades: null,
     dataInicio: MOTSC_INICIO_PADRAO,
@@ -778,14 +780,31 @@ function atualizarMotscSeAntigo(protocolo) {
     if (!isMotscAntigo(dose)) return dose;
     return {
       ...dose,
-      dose: "5mg",
+      dose: MOTSC_DOSE_ATUAL,
       horario: "Manha",
       diasSemana: ["Seg", "Qua", "Sex"],
-      descricao: "5mg por aplicacao, 3x por semana por 4 semanas, pausa 2 e repete por mais 4.",
+      descricao: MOTSC_DESCRICAO_ATUAL,
       reconstituicao: "Conforme apresentacao utilizada",
       unidades: null,
       dataInicio: MOTSC_INICIO_PADRAO,
       dataFim: MOTSC_FIM_PADRAO,
+    };
+  });
+}
+
+function recalibrarMotscParaDoseAtual(protocolo) {
+  return protocolo.map((dose) => {
+    if (dose?.id !== "motsc") return dose;
+    return {
+      ...dose,
+      dose: MOTSC_DOSE_ATUAL,
+      horario: dose.horario || "Manha",
+      diasSemana: ["Seg", "Qua", "Sex"],
+      descricao: MOTSC_DESCRICAO_ATUAL,
+      reconstituicao: dose.reconstituicao || "Conforme apresentacao utilizada",
+      unidades: null,
+      dataInicio: dose.dataInicio || MOTSC_INICIO_PADRAO,
+      dataFim: dose.dataFim || MOTSC_FIM_PADRAO,
     };
   });
 }
@@ -1354,6 +1373,26 @@ export default function App() {
 
     setMigracoes((prev) => ({ ...prev, protocoloAbr2026: true }));
   }, [carregando, migracoes.protocoloAbr2026, protocolo]);
+
+  useEffect(() => {
+    if (carregando || migracoes.motscMai2026Dose1mg) return;
+
+    const precisaRecalibrar = protocolo.some(
+      (dose) =>
+        dose?.id === "motsc" &&
+        (dose.dose !== MOTSC_DOSE_ATUAL ||
+          dose.descricao !== MOTSC_DESCRICAO_ATUAL ||
+          dose.unidades !== null ||
+          dose.diasSemana?.join(",") !== "Seg,Qua,Sex")
+    );
+
+    if (precisaRecalibrar) {
+      setProtocolo((prev) => recalibrarMotscParaDoseAtual(prev));
+      setMensagem("MOTS-c recalibrado para 1mg, 3x por semana.");
+    }
+
+    setMigracoes((prev) => ({ ...prev, motscMai2026Dose1mg: true }));
+  }, [carregando, migracoes.motscMai2026Dose1mg, protocolo]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
